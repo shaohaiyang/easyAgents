@@ -20,3 +20,11 @@ class ToolNotFoundError(EasyAgentsError):
 
 class DelegationError(EasyAgentsError):
     """Raised when a delegation call fails (subagent crashes, returns invalid output)."""
+
+
+class SessionStoreError(EasyAgentsError):
+    """Raised when a session store backend operation fails."""
+
+
+class ContextCompressionError(EasyAgentsError):
+    """Raised when context compression fails (LLM error, serialization error)."""
