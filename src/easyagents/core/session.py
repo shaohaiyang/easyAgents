@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from uuid import uuid4
 
 from pydantic_ai import ModelMessage
 
@@ -13,19 +14,31 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self) -> None:
-        self._sessions: dict[str, Session] = {}
+    """Session manager that delegates to a SessionStore backend.
+
+    With no arguments, uses InMemorySessionStore (backward compatible with MVP).
+    Pass a SessionStore instance to use a different backend (e.g. SQLiteSessionStore).
+    """
+
+    def __init__(self, store=None) -> None:
+        if store is None:
+            from easyagents.persistence.memory import InMemorySessionStore
+            store = InMemorySessionStore()
+        self._store = store
 
     def create(self) -> Session:
-        conversation_id = str(uuid4())
-        session = Session(conversation_id=conversation_id)
-        self._sessions[conversation_id] = session
-        return session
+        return self._store.create()
 
     def get(self, conversation_id: str) -> Session | None:
-        return self._sessions.get(conversation_id)
+        return self._store.get(conversation_id)
 
     def save_messages(self, conversation_id: str, messages: list[ModelMessage]) -> None:
-        if conversation_id not in self._sessions:
+        if self._store.get(conversation_id) is None:
             raise EasyAgentsError(f"Session '{conversation_id}' not found")
-        self._sessions[conversation_id].messages = messages
+        self._store.save_messages(conversation_id, messages)
+
+    def delete(self, conversation_id: str) -> None:
+        self._store.delete(conversation_id)
+
+    def list_sessions(self) -> list[str]:
+        return self._store.list_sessions()
