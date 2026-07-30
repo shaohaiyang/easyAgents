@@ -1,7 +1,7 @@
 import sqlite3
 from uuid import uuid4
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import ModelMessage
 
 from easyagents.core.exceptions import SessionStoreError
@@ -25,6 +25,7 @@ class SQLiteSessionStore(SessionStore):
     def __init__(self, db_path: str = "easyagents.db") -> None:
         self._db_path = db_path
         self._conn = sqlite3.connect(self._db_path)
+        self._conn.execute("PRAGMA foreign_keys = ON")
         self._init_db()
 
     def _init_db(self) -> None:
@@ -48,6 +49,7 @@ class SQLiteSessionStore(SessionStore):
                     ON messages(conversation_id);
             """)
             self._conn.commit()
+            self._conn.execute("PRAGMA foreign_keys = ON")
         except sqlite3.Error as e:
             raise SessionStoreError(f"Failed to initialize database: {e}") from e
 
@@ -85,7 +87,7 @@ class SQLiteSessionStore(SessionStore):
                 messages = []
 
             return Session(conversation_id=conversation_id, messages=messages)
-        except sqlite3.Error as e:
+        except (sqlite3.Error, ValidationError) as e:
             raise SessionStoreError(f"Failed to get session: {e}") from e
 
     def save_messages(self, conversation_id: str, messages: list) -> None:
@@ -131,3 +133,13 @@ class SQLiteSessionStore(SessionStore):
             return [row[0] for row in cursor.fetchall()]
         except sqlite3.Error as e:
             raise SessionStoreError(f"Failed to list sessions: {e}") from e
+
+    def close(self) -> None:
+        """Close the database connection."""
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self._conn.close()

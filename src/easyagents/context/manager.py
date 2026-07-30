@@ -46,10 +46,13 @@ class ContextManager:
         if token_count <= self.max_tokens:
             return messages
 
-        return await self._compress(messages, model)
+        return await self._compress(messages, model, token_count)
 
     async def _compress(
-        self, messages: list[ModelMessage], model: Any = None
+        self,
+        messages: list[ModelMessage],
+        model: Any = None,
+        token_count: int = 0,
     ) -> list[ModelMessage]:
         """Summarize old messages, keep recent ones."""
         if len(messages) <= self.keep_recent:
@@ -71,7 +74,8 @@ class ContextManager:
             raise
         except Exception as e:
             raise ContextCompressionError(
-                f"Context compression failed: {e}"
+                f"Context compression failed: {e} "
+                f"(messages={len(messages)}, tokens={token_count})"
             ) from e
 
         summary_message = ModelRequest(

@@ -2,6 +2,13 @@ import asyncio
 import os
 
 
+def _is_path_safe(path: str) -> bool:
+    """Check if path is within the current working directory."""
+    base = os.path.realpath(os.getcwd())
+    resolved = os.path.realpath(path)
+    return resolved == base or resolved.startswith(base + os.sep)
+
+
 async def write_file(
     path: str,
     content: str,
@@ -19,9 +26,10 @@ async def write_file(
         On error: {"path": "", "error": str}
     """
     try:
+        if not _is_path_safe(path):
+            return {"path": "", "error": "Path outside working directory denied"}
+
         normalized = os.path.normpath(path)
-        if ".." in normalized.split(os.sep):
-            return {"path": "", "error": "Path traversal denied"}
 
         def _write():
             mode = "a" if append else "w"
