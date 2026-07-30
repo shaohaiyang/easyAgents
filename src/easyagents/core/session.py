@@ -3,6 +3,8 @@ from uuid import uuid4
 
 from pydantic_ai import ModelMessage
 
+from easyagents.core.exceptions import EasyAgentsError
+
 
 @dataclass
 class Session:
@@ -24,4 +26,6 @@ class SessionManager:
         return self._sessions.get(conversation_id)
 
     def save_messages(self, conversation_id: str, messages: list[ModelMessage]) -> None:
+        if conversation_id not in self._sessions:
+            raise EasyAgentsError(f"Session '{conversation_id}' not found")
         self._sessions[conversation_id].messages = messages

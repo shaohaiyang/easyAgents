@@ -83,5 +83,6 @@ def test_full_pipeline():
 
     agent = agents.create("orchestrator", tools)
     result = agent.run_sync("research bluetooth earphones", model=TestModel())
-    assert result.output is not None
+    assert isinstance(result.output, str)
+    assert len(result.output) > 0
     assert len(result.all_messages()) > 0

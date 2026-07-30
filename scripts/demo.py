@@ -5,6 +5,7 @@ from pydantic_ai.models.test import TestModel
 from easyagents import (
     AgentDefinition,
     AgentRegistry,
+    SessionManager,
     ToolRegistry,
     configure,
 )
@@ -38,6 +39,10 @@ def main():
         subagents=["researcher"],
     ))
 
+    session_mgr = SessionManager()
+    session = session_mgr.create()
+    print(f"Session ID: {session.conversation_id}")
+
     agent = agents.create("orchestrator", tools)
 
     result = agent.run_sync(
@@ -48,7 +53,10 @@ def main():
         ))),
     )
 
+    session_mgr.save_messages(session.conversation_id, result.all_messages())
+
     print(f"Output: {result.output}")
+    print(f"Messages: {len(session.messages)}")
     print(f"Usage: {result.usage}")
     print("Done!")
 
