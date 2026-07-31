@@ -53,12 +53,11 @@ async def test_handoff_full_history_transfer(tool_registry, registry):
 @pytest.mark.asyncio
 async def test_handoff_none_mode_no_history(tool_registry, registry):
     """context_mode='none' means no history transfer."""
-    call_count = 0
+    message_counts = []
 
     def handler(messages, info):
-        nonlocal call_count
-        call_count += 1
-        return ModelResponse(parts=[TextPart(content=f"Call {call_count}, msgs={len(messages)}")])
+        message_counts.append(len(messages))
+        return ModelResponse(parts=[TextPart(content="OK")])
 
     registry.register(AgentDefinition(name="a", instructions="A.", model="test"))
     registry.register(AgentDefinition(name="b", instructions="B.", model="test"))
@@ -72,8 +71,9 @@ async def test_handoff_none_mode_no_history(tool_registry, registry):
 
     await handoff.run("hello", model=FunctionModel(handler))
 
-    # Both agents should see 1 message (just their own input)
-    # call_count == 2 after both agents run
+    # With "none" mode, second agent should see 1 message (just its own input)
+    assert len(message_counts) == 2
+    assert message_counts[1] == 1  # Second agent sees only its own input
 
 
 @pytest.mark.asyncio
@@ -146,3 +146,30 @@ async def test_handoff_with_custom_task_templates(tool_registry, registry):
 
     result = await handoff.run("data", model=make_handoff_handler())
     assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_handoff_compressed_mode_with_context_manager(tool_registry, registry):
+    """context_mode='compressed' with a ContextManager compresses history between agents."""
+    from easyagents import ContextManager
+
+    def handler(messages, info):
+        return ModelResponse(parts=[TextPart(content="OK")])
+
+    registry.register(AgentDefinition(name="a", instructions="A.", model="test"))
+    registry.register(AgentDefinition(name="b", instructions="B.", model="test"))
+
+    ctx_mgr = ContextManager(model="test", max_tokens=100, keep_recent=2)
+
+    handoff = HandoffPattern(
+        agents=["a", "b"],
+        registry=registry,
+        tool_registry=tool_registry,
+        context_mode="compressed",
+        context_manager=ctx_mgr,
+    )
+
+    result = await handoff.run("test input", model=FunctionModel(handler))
+    assert result.output is not None
+    assert result.agent_chain == ["a", "b"]
+

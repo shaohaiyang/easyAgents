@@ -168,3 +168,40 @@ async def test_orchestrator_parallelism(tool_registry, registry):
 
     # If parallel, elapsed < 0.6s (2 * 0.3s). Allow margin.
     assert elapsed < 0.55, f"Expected parallel (<0.55s), got {elapsed:.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_synthesis_failure_falls_back(tool_registry, registry):
+    """If synthesis agent fails, output falls back to joined subtask results."""
+    def handler(messages, info):
+        for part in messages[-1].parts:
+            content = str(getattr(part, "content", ""))
+            if "Research" in content:
+                return ModelResponse(parts=[TextPart(content="Research OK")])
+            if "Analyze" in content:
+                return ModelResponse(parts=[TextPart(content="Analysis OK")])
+            if "Synthesize" in content:
+                raise RuntimeError("Synthesis failed")
+        return ModelResponse(parts=[TextPart(content="Default")])
+
+    registry.register(AgentDefinition(name="researcher", instructions="Research.", model="test"))
+    registry.register(AgentDefinition(name="analyst", instructions="Analyze.", model="test"))
+    registry.register(AgentDefinition(name="synthesizer", instructions="Synthesize.", model="test"))
+
+    orch = OrchestratorWorker(
+        orchestrator_agent="coordinator",
+        subtasks=[
+            SubtaskTemplate(agent="researcher", task_template="Research {topic}"),
+            SubtaskTemplate(agent="analyst", task_template="Analyze {topic}"),
+        ],
+        registry=registry,
+        tool_registry=tool_registry,
+        synthesis_agent="synthesizer",
+    )
+
+    result = await orch.run("test", params={"topic": "x"}, model=FunctionModel(handler))
+
+    # Should fall back to joined results
+    assert "Research OK" in str(result.output)
+    assert "Analysis OK" in str(result.output)
+

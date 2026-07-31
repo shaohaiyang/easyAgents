@@ -24,7 +24,12 @@ class OrchestrationResult:
 
 
 class OrchestratorWorker:
-    """Executes predefined subtask templates in parallel across multiple subagents."""
+    """Executes predefined subtask templates in parallel across multiple subagents.
+
+    Note: ``orchestrator_agent`` is currently reserved for future use. It will drive
+    LLM-driven decomposition in Phase 3, but is retained here as part of the public
+    API so callers can wire it up ahead of time.
+    """
 
     def __init__(
         self,
@@ -82,8 +87,35 @@ class OrchestratorWorker:
             )
 
         if self.synthesis_agent:
-            valid_results = [str(r) for r in subtask_results if r is not None]
-            synthesis_input = "\n".join(valid_results)
+            if self.context_manager:
+                from pydantic_ai import ModelRequest, ModelResponse, TextPart, UserPromptPart
+
+                # Build pseudo-messages from subtask results for compression
+                pseudo_messages = []
+                for r in subtask_results:
+                    if r is not None:
+                        pseudo_messages.append(
+                            ModelRequest(parts=[UserPromptPart(content=str(r))])
+                        )
+                        pseudo_messages.append(
+                            ModelResponse(parts=[TextPart(content=str(r))])
+                        )
+                if pseudo_messages:
+                    compressed = await self.context_manager.compress_if_needed(
+                        pseudo_messages, model=model
+                    )
+                    # Extract text from compressed messages
+                    valid_results = [
+                        str(getattr(p, "content", ""))
+                        for msg in compressed
+                        for p in msg.parts
+                    ]
+                    synthesis_input = "\n".join(valid_results)
+                else:
+                    synthesis_input = ""
+            else:
+                valid_results = [str(r) for r in subtask_results if r is not None]
+                synthesis_input = "\n".join(valid_results)
             try:
                 agent = self.registry.create(self.synthesis_agent, self.tool_registry)
                 run_kwargs: dict[str, Any] = {"usage": usage}
