@@ -28,3 +28,15 @@ class SessionStoreError(EasyAgentsError):
 
 class ContextCompressionError(EasyAgentsError):
     """Raised when context compression fails (LLM error, serialization error)."""
+
+
+class OrchestrationError(EasyAgentsError):
+    """Raised when orchestrator-worker execution fails."""
+
+
+class HandoffError(EasyAgentsError):
+    """Raised when a handoff between agents fails."""
+
+
+class RoutingError(EasyAgentsError):
+    """Raised when agent routing fails (no match, LLM error)."""
