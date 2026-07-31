@@ -11,7 +11,13 @@ from easyagents.core.exceptions import (
     DelegationError,
     SessionStoreError,
     ContextCompressionError,
+    OrchestrationError,
+    HandoffError,
+    RoutingError,
 )
+from easyagents.patterns.orchestrator import OrchestratorWorker, SubtaskTemplate, OrchestrationResult
+from easyagents.patterns.handoff import HandoffPattern, HandoffResult
+from easyagents.patterns.router import RouterPattern
 from easyagents.tools.registry import ToolRegistry, ToolMetadata
 from easyagents.tools.builtin.web_search import web_search
 from easyagents.tools.builtin.http_request import http_request
@@ -47,4 +53,14 @@ __all__ = [
     "write_file",
     "SessionStoreError",
     "ContextCompressionError",
+    # Phase 2 (new)
+    "OrchestratorWorker",
+    "SubtaskTemplate",
+    "OrchestrationResult",
+    "HandoffPattern",
+    "HandoffResult",
+    "RouterPattern",
+    "OrchestrationError",
+    "HandoffError",
+    "RoutingError",
 ]
