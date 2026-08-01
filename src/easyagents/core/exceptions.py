@@ -40,3 +40,15 @@ class HandoffError(EasyAgentsError):
 
 class RoutingError(EasyAgentsError):
     """Raised when agent routing fails (no match, LLM error)."""
+
+
+class WorkflowError(EasyAgentsError):
+    """Raised when a graph workflow execution fails."""
+
+
+class CheckpointError(EasyAgentsError):
+    """Raised when checkpoint save/load/rollback fails."""
+
+
+class ApprovalError(EasyAgentsError):
+    """Raised when approval resumption fails (invalid state, already resumed)."""
