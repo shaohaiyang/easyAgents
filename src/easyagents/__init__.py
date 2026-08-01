@@ -27,6 +27,11 @@ from easyagents.persistence.base import SessionStore
 from easyagents.persistence.memory import InMemorySessionStore
 from easyagents.persistence.sqlite import SQLiteSessionStore
 from easyagents.context.manager import ContextManager
+from easyagents.workflows.nodes import AgentNode, ApprovalNode
+from easyagents.workflows.graph import GraphWorkflow, GraphResult, PendingApproval, ApprovalResult
+from easyagents.workflows.checkpoint import CheckpointManager, Checkpoint
+from easyagents.patterns.orchestrator import DynamicOrchestrator, DynamicSubtask
+from easyagents.core.exceptions import WorkflowError, CheckpointError, ApprovalError
 
 __all__ = [
     # MVP (existing)
@@ -63,4 +68,18 @@ __all__ = [
     "OrchestrationError",
     "HandoffError",
     "RoutingError",
+    # Phase 3 (new)
+    "AgentNode",
+    "ApprovalNode",
+    "GraphWorkflow",
+    "GraphResult",
+    "PendingApproval",
+    "ApprovalResult",
+    "CheckpointManager",
+    "Checkpoint",
+    "DynamicOrchestrator",
+    "DynamicSubtask",
+    "WorkflowError",
+    "CheckpointError",
+    "ApprovalError",
 ]
