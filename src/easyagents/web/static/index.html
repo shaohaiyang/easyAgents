@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyAgents Workbench</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>EasyAgents Workbench</h1>
+    </header>
+    <nav>
+        <button class="tab-btn active" data-tab="agents">Agents</button>
+        <button class="tab-btn" data-tab="sessions">Sessions</button>
+        <button class="tab-btn" data-tab="patterns">Patterns</button>
+        <button class="tab-btn" data-tab="approvals">Approvals</button>
+    </nav>
+    <main>
+        <div id="agents" class="tab-content active">
+            <h2>Registered Agents</h2>
+            <table id="agents-table"><thead><tr><th>Name</th><th>Model</th><th>Description</th></tr></thead><tbody></tbody></table>
+            <h3>Register New Agent</h3>
+            <form id="agent-form">
+                <input name="name" placeholder="Agent name" required>
+                <input name="instructions" placeholder="Instructions" required>
+                <input name="model" placeholder="Model" value="test">
+                <input name="description" placeholder="Description">
+                <button type="submit">Register</button>
+            </form>
+        </div>
+        <div id="sessions" class="tab-content">
+            <div class="split">
+                <div class="sidebar">
+                    <h2>Sessions</h2>
+                    <button id="new-session">New Session</button>
+                    <ul id="session-list"></ul>
+                </div>
+                <div class="chat-area">
+                    <div id="messages"></div>
+                    <form id="chat-form">
+                        <input name="agent" placeholder="Agent name" required>
+                        <input name="prompt" placeholder="Message" required>
+                        <button type="submit">Run</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div id="patterns" class="tab-content">
+            <h2>Orchestrate</h2>
+            <form id="orchestrate-form">
+                <input name="task" placeholder="Task" required>
+                <button type="submit">Orchestrate</button>
+            </form>
+            <div id="orchestrate-result"></div>
+            <h2>Route</h2>
+            <form id="route-form">
+                <input name="user_input" placeholder="Query" required>
+                <button type="submit">Route</button>
+            </form>
+            <div id="route-result"></div>
+            <h2>Handoff</h2>
+            <form id="handoff-form">
+                <input name="agents" placeholder="agent1,agent2" required>
+                <input name="user_input" placeholder="Input" required>
+                <button type="submit">Run Handoff</button>
+            </form>
+            <div id="handoff-result"></div>
+        </div>
+        <div id="approvals" class="tab-content">
+            <h2>Pending Approvals</h2>
+            <div id="approval-list"><p>No pending approvals.</p></div>
+        </div>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>
