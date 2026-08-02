@@ -22,9 +22,9 @@ class SQLiteSessionStore(SessionStore):
     ``sqlite3.connect(":memory:")`` would otherwise create a fresh, empty DB).
     """
 
-    def __init__(self, db_path: str = "easyagents.db") -> None:
+    def __init__(self, db_path: str = "easyagents.db", check_same_thread: bool = False) -> None:
         self._db_path = db_path
-        self._conn = sqlite3.connect(self._db_path)
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=check_same_thread)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._init_db()
 
