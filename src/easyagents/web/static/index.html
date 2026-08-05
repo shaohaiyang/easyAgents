@@ -19,12 +19,14 @@
     <main>
         <div id="agents" class="tab-content active">
             <h2>Registered Agents</h2>
-            <table id="agents-table"><thead><tr><th>Name</th><th>Model</th><th>Description</th></tr></thead><tbody></tbody></table>
+            <table id="agents-table"><thead><tr><th>Name</th><th>Model</th><th>Instructions</th><th>Tools</th><th>Subagents</th><th>Description</th></tr></thead><tbody></tbody></table>
             <h3>Register New Agent</h3>
             <form id="agent-form">
                 <input name="name" placeholder="Agent name" required>
-                <input name="instructions" placeholder="Instructions" required>
+                <input name="instructions" placeholder="Instructions (system prompt)" required>
                 <input name="model" placeholder="Model" value="test">
+                <input name="tools" placeholder="tools (comma-separated)">
+                <input name="subagents" placeholder="subagents (comma-separated)">
                 <input name="description" placeholder="Description">
                 <button type="submit">Register</button>
             </form>

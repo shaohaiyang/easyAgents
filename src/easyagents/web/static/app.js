@@ -20,13 +20,28 @@ async function loadAgents() {
     try {
         const data = await fetchJSON(`${API}/agents`);
         const tbody = document.querySelector('#agents-table tbody');
-        tbody.innerHTML = (data.agents || []).map(a => `<tr><td>${a}</td><td>-</td><td>-</td></tr>`).join('');
+        tbody.innerHTML = (data.agents || []).map(a => {
+            const tools = (a.tools || []).join(', ') || '-';
+            const subagents = (a.subagents || []).join(', ') || '-';
+            const desc = a.description || '-';
+            const inst = a.instructions ? a.instructions.slice(0, 60) + (a.instructions.length > 60 ? '...' : '') : '-';
+            return `<tr><td>${a.name}</td><td>${a.model || '-'}</td><td title="${(a.instructions||'').replace(/"/g,'&quot;')}">${inst}</td><td>${tools}</td><td>${subagents}</td><td>${desc}</td></tr>`;
+        }).join('');
     } catch (e) { console.error(e); }
 }
 document.getElementById('agent-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const body = Object.fromEntries(fd);
+    const toolsRaw = fd.get('tools');
+    const subagentsRaw = fd.get('subagents');
+    const body = {
+        name: fd.get('name'),
+        instructions: fd.get('instructions'),
+        model: fd.get('model') || 'test',
+        tools: toolsRaw ? toolsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+        subagents: subagentsRaw ? subagentsRaw.split(',').map(s => s.trim()).filter(Boolean) : [],
+        description: fd.get('description') || '',
+    };
     try {
         await fetchJSON(`${API}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         e.target.reset();

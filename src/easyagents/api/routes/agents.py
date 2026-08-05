@@ -10,7 +10,18 @@ _registry, _tools = create_registry()
 
 @router.get("/")
 async def list_agents():
-    return {"agents": _registry.list()}
+    result = []
+    for name in _registry.list():
+        defn = _registry.get(name)
+        result.append({
+            "name": defn.name,
+            "model": defn.model,
+            "instructions": defn.instructions,
+            "description": defn.description,
+            "tools": defn.tools,
+            "subagents": defn.subagents,
+        })
+    return {"agents": result}
 
 
 @router.post("/", status_code=201)
