@@ -1,539 +1,188 @@
-# EasyAgents - Vibe Coding 反脆弱提示词体系
+# EasyAgents
 
-> 工程化思维 · 场景驱动 · 持续迭代
->
-> 让 AI 编程助手产出更可靠、更可控的代码
+通用多智能体研究工作台 SDK，基于 [Pydantic AI](https://ai.pydantic.dev/) 构建。提供智能体注册、编排、会话管理、持久化、工具、工作流（含人工审批）、CLI、REST API 与 Web 界面。
 
----
+## 特性
 
-## 为什么需要这个？
+- **智能体定义与注册**：声明式 `AgentDefinition`，支持工具绑定与子智能体。
+- **编排模式**：`OrchestratorWorker`（并行分解）、`DynamicOrchestrator`（LLM 动态分解）、`HandoffPattern`（智能体交接）、`RouterPattern`（LLM 路由）。
+- **图工作流 + 人工审批**：`GraphWorkflow` 支持 HITL 暂停 / 恢复，`CheckpointManager` 内存与 SQLite 断点持久化。
+- **会话管理**：`SessionStore` 抽象，内置 `InMemorySessionStore` / `SQLiteSessionStore`。
+- **上下文管理**：`ContextManager` 阈值触发 LLM 压缩，防止上下文溢出。
+- **内置工具**：`web_search`、`http_request`、`write_file`（含路径安全校验）。
+- **可观测性**：`configure()` 一键接入 Logfire 跟踪。
+- **四种使用形态**：Python SDK / Typer CLI / FastAPI REST API / Web UI。
 
-Vibe Coding（氛围编程）用 AI 写代码爽，但常踩坑：
+## 安装
 
-| 痛点 | 表现 |
-|------|------|
-| 代码跑不起来 | AI 自信满满，运行就报错 |
-| 省略关键代码 | "其余代码类似" → 你猜 |
-| 顺手优化 | 改 A 顺手改了 B、C、D |
-| 不分析根因 | 修 bug 只治标，下次还犯 |
-| 修完出新问题 | 改了登录，注册崩了 |
-
-**本体系提供 9 套工程化 Prompt，针对以上痛点一一破解。**
-
----
-
-## 决策树：我该用哪个？
-
-```
-你的目标是什么？
-│
-├─ 从零生成代码 ────→ 生成期 ──→ #1 完整性 + #2 可运行
-│
-├─ 修改现有代码 ────→ 变更期 ──→ #3 变更纪律
-│
-├─ 修复 Bug ───────→ 变更期 ──→ #4 根因分析 + #5 回归验证
-│
-├─ 优化性能 ───────→ 质量期 ──→ #6 优化
-│
-├─ 重构代码 ───────→ 质量期 ──→ #7 重构
-│
-├─ 审查安全 ───────→ 质量期 ──→ #8 安全审查
-│
-├─ 理解代码 ───────→ 理解期 ──→ #9 层次化解释
-│
-└─ 不知道选哪个 ───→ 看下方「场景组合」
+```bash
+pip install "easyagents[dev]"
+# 或从源码：
+uv sync --extra dev
 ```
 
-### 场景组合速查
+依赖：Python 3.11+，Pydantic AI ≥0.0.30，Pydantic v2，Logfire，duckduckgo-search，httpx，typer，fastapi，uvicorn。
 
-| 场景 | 推荐组合 | 说明 |
-|------|----------|------|
-| 新功能开发 | #1 + #3 | 完整交付 + 最小改动 |
-| Bug 修复 | #3 + #4 + #5 | 改动可控 + 根因分析 + 回归验证 |
-| 代码优化 | #3 + #6 | 改动可控 + 数据驱动优化 |
-| 代码重构 | #3 + #5 + #7 | 改动可控 + 回归验证 + 行为等价 |
-| 安全审计 | #8 + #9 | 安全检查 + 层次化理解 |
-| 代码理解 | #9 | 从宏观到微观 |
+## 快速开始
 
----
+> 默认模型为 `"test"`（`TestModel`），本地可运行，无需真实 LLM API。
 
-## 9 套 Prompt 详解
+```python
+from pydantic import BaseModel
+from pydantic_ai.models.test import TestModel
+from easyagents import (
+    AgentDefinition, AgentRegistry, SessionManager, ToolRegistry, configure,
+)
 
-### 生成期：从零开始写代码
+configure(service_name="easyagents-demo")
 
-#### #1 代码完整性
+class ResearchFindings(BaseModel):
+    products: list[str]
+    summary: str
 
-> **解决：** AI 习惯性省略"显而易见"的代码
+tools = ToolRegistry()
+tools.register("web_search", lambda q: [{"title": "AirPods Pro 2", "url": "https://apple.com"}])
 
-**精简版（日常使用）：**
-```
-请生成完整可运行的代码：
-1. 禁止使用 "..."、"// 类似代码"、"/* 省略 */" 等省略标记
-2. 每个文件包含完整 import，每个函数有完整实现
-3. 代码超 200 行时按文件拆分，但每个文件必须完整
-4. 提供目录结构和运行命令
-```
+agents = AgentRegistry()
+agents.register(AgentDefinition(
+    name="researcher",
+    instructions="Research products using web_search.",
+    model="test",
+    tools=["web_search"],
+    output_type=ResearchFindings,
+))
+agents.register(AgentDefinition(
+    name="orchestrator",
+    instructions="Use delegate_researcher to research, then summarize.",
+    model="test",
+    subagents=["researcher"],
+))
 
-**完整版（严格场景）：**
-```
-请生成完整可运行的代码：
-1. 禁止使用 "..."、"// 其余代码类似"、"/* 省略 */" 等省略标记
-2. 每个文件必须包含完整的 import 语句
-3. 每个函数必须有完整的实现，不能留空
-4. 如果代码超过 200 行，按文件拆分，但每个文件必须完整
-5. 提供项目目录结构和每个文件的内容
-6. 列出依赖包及版本号
-7. 提供运行命令和验证方法
-```
+session_mgr = SessionManager()
+session = session_mgr.create()
 
----
-
-#### #2 代码可运行
-
-> **解决：** AI 不自测就输出，缺乏验证意识
-
-**精简版：**
-```
-请生成代码后自检：
-1. 列出依赖包和版本
-2. 标注关键路径和可能的异常点
-3. 为公共函数添加类型注解
-4. 提供最小可运行测试用例
-5. 无法确认的部分明确标注
+agent = agents.create("orchestrator", tools)
+result = agent.run_sync("调研最近爆火的蓝牙耳机", model=TestModel(
+    custom_output_text=str(ResearchFindings(products=["AirPods Pro 2"], summary="Top competitor.")),
+))
+session_mgr.save_messages(session.conversation_id, result.all_messages())
+print(result.output, result.usage)
 ```
 
-**完整版：**
-```
-请生成代码后按以下步骤自检：
-1. 列出代码依赖的所有包和版本
-2. 模拟执行关键路径，标注可能的异常点
-3. 为每个公共函数添加类型注解和 docstring
-4. 提供最小可运行的测试用例
-5. 如果无法 100% 确认能运行，请明确标注"不确定"的部分
-```
+完整可运行示例见 [`scripts/demo.py`](scripts/demo.py)。
 
-> ⚠️ **注意：** LLM 无法真正执行代码，"模拟执行"应理解为"列出关键执行路径和潜在失败点"
+## 编排模式
 
----
+```python
+import asyncio
+from easyagents import OrchestratorWorker, SubtaskTemplate, HandoffPattern, RouterPattern
 
-### 变更期：修改现有代码
+# 并行子任务编排
+orch = OrchestratorWorker(
+    orchestrator_agent="coordinator",
+    subtasks=[SubtaskTemplate(agent="researcher", task_template="调研{topic}")],
+    registry=agents, tool_registry=tools,
+)
+result = asyncio.run(orch.run("蓝牙耳机", params={}, model="test"))
 
-#### #3 变更纪律
+# 智能体交接
+handoff = HandoffPattern(registry=agents, tool_registry=tools, model="test")
+hdr = asyncio.run(handoff.run(agents=["researcher", "writer"], user_input="写文章"))
 
-> **解决：** AI 有"优化冲动"，修改范围失控
-
-**精简版：**
-```
-请严格遵守最小改动原则：
-1. 只修改我明确指定的代码行/函数/模块
-2. 禁止"顺手优化"其他代码
-3. 禁止添加未要求的功能或注释
-4. 需求不明确时先提问，不要自行发挥
-5. 修改前输出 diff 预览，修改后列出被改动行号
+# LLM 路由
+router = RouterPattern(agents=agents.list(), registry=agents, tool_registry=tools, model="test")
+best = asyncio.run(router.route("查一下市场数据"))
 ```
 
-**完整版：**
-```
-请严格遵守最小改动原则：
-1. 只修改我明确指定的代码行/函数/模块
-2. 禁止"顺手优化"其他代码，即使你觉得可以改进
-3. 禁止添加额外的功能、注释、优化建议
-4. 如果我的需求不明确，先提问确认，不要自行发挥
-5. 修改前输出 diff 预览，标注每处改动的原因
-6. 修改后列出所有被改动的行号
-7. 如果改动可能影响其他模块，请先警告我
-8. 输出前自检：我要求的 vs 我生成的，是否完全一致？
-```
+## 图工作流与人工审批
 
----
+```python
+from easyagents import GraphWorkflow, AgentNode, ApprovalNode
 
-#### #4 根因分析
-
-> **解决：** AI 直接给修复方案，不分析根因
-
-**精简版：**
-```
-请按以下流程修复问题：
-1. 复现：描述触发条件和表现
-2. 根因：分析根本原因（不要只描述症状）
-3. 影响：这个问题影响了哪些模块
-4. 方案：提供至少 2 种方案并对比
-5. 验证：如何确认修复且无回归
-6. 预防：如何避免同类问题
+wf = GraphWorkflow(decomposition={
+    "step1": AgentNode("researcher"),
+    "step2": ApprovalNode("reviewer"),
+})
+plan = wf.build_plan()              # 构建并暂停在待审批节点
+for p in plan.pending:              # 手动审批
+    p.approve()
+result = wf.resume(plan)            # 恢复执行
 ```
 
-**完整版：**
-```
-请按工程化流程修复问题：
-1. 复现问题：描述问题的触发条件和表现
-2. 根因分析：用"5 Why"方法追溯根本原因（至少 3 层）
-3. 影响范围：这个问题影响了哪些模块
-4. 修复方案：提供至少 2 种方案并对比优劣
-5. 验证方法：如何确认问题已修复且无回归
-6. 预防措施：如何避免同类问题再次出现
-```
+## CLI
 
-> ⚠️ **注意：** "5 Why"在 LLM 中退化为"至少问 3 层为什么"，LLM 不真正做因果推理
-
----
-
-#### #5 回归验证
-
-> **解决：** 修 bug 时引入新问题
-
-**精简版：**
-```
-在修改前完成回归分析：
-1. 列出当前代码的核心功能点
-2. 分析修改会影响哪些功能
-3. 为受影响功能提供验证方法
-4. 修改后逐一验证，无法验证的标注"需手动测试"
+```bash
+easyagents run researcher --prompt "调研蓝牙耳机"
+easyagents agents
+easyagents sessions
+easyagents session-show <conversation_id>
+easyagents orchestrate "调研蓝牙耳机"
+easyagents route "查一下市场数据"
+easyagents serve --port 8000       # 启动 REST API + Web UI
 ```
 
-**完整版：**
-```
-在修改任何代码前，请先完成回归分析：
-1. 列出当前代码的所有功能点
-2. 分析我的修改会影响哪些功能点
-3. 为每个受影响的功能点提供验证方法
-4. 修改后，逐一验证所有功能点是否正常工作
-5. 如果无法验证，明确标注"需要手动测试"的部分
+## REST API & Web UI
+
+启动服务：
+
+```bash
+easyagents serve --port 8000
 ```
 
----
+- Web UI：`http://localhost:8000/web`（Agents / Sessions / Patterns / Approvals 四个标签页）
+- REST API（`/api` 前缀）：
 
-### 质量期：提升代码质量
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/api/agents` | GET/POST | 列出 / 注册智能体 |
+| `/api/sessions` | GET/POST | 会话列表 / 新建会话 |
+| `/api/sessions/{id}` | GET/POST | 会话详情 / 运行 |
+| `/api/patterns/orchestrate` | POST | 编排 |
+| `/api/patterns/handoff` | POST | 交接 |
+| `/api/patterns/route` | POST | 路由 |
+| `/api/approvals` | GET/POST | 待审批 / 处理审批 |
+| `/api/checkpoints` | GET/POST/PUT | 断点管理 |
 
-#### #6 优化
+交互式文档访问 `http://localhost:8000/docs`。
 
-> **解决：** AI 盲目优化，不考虑可读性和维护性
+## 公开 API
 
-**精简版：**
-```
-请按以下流程优化代码：
-1. 分析当前性能瓶颈（用数据）
-2. 明确优化目标（速度/内存/可读性）
-3. 提供优化前后对比
-4. 评估副作用和回滚方案
-5. 确保原有测试通过
-```
+`easyagents` 顶层导出（`__all__`，44 个符号）：
 
-**完整版：**
-```
-请按工程化流程优化代码：
-1. 性能分析：当前代码的性能瓶颈在哪里（用数据说话）
-2. 优化目标：明确优化指标（速度/内存/可读性/可维护性）
-3. 优化方案：提供优化前后的对比（代码 + 性能数据）
-4. 风险评估：优化可能带来的副作用
-5. 回滚方案：如果优化失败，如何快速回滚
-6. 优化后代码必须通过原有测试用例
-```
+- **核心**：`AgentDefinition`、`AgentRegistry`、`Session`、`SessionManager`
+- **工具**：`ToolRegistry`、`ToolMetadata`、`web_search`、`http_request`、`write_file`
+- **持久化**：`SessionStore`、`InMemorySessionStore`、`SQLiteSessionStore`
+- **上下文**：`ContextManager`
+- **编排**：`OrchestratorWorker`、`SubtaskTemplate`、`OrchestrationResult`、`DynamicOrchestrator`、`DynamicSubtask`
+- **模式**：`HandoffPattern`、`HandoffResult`、`RouterPattern`
+- **工作流**：`AgentNode`、`ApprovalNode`、`GraphWorkflow`、`GraphResult`、`PendingApproval`、`ApprovalResult`、`CheckpointManager`、`Checkpoint`
+- **可观测性**：`configure`
+- **异常**：`EasyAgentsError` 及 14 个子类（`AgentAlreadyRegisteredError`、`SessionStoreError`、`OrchestrationError`、`HandoffError`、`RoutingError`、`WorkflowError`、`CheckpointError`、`ApprovalError` 等）
 
----
-
-#### #7 重构
-
-> **解决：** AI 重构后行为不一致
-
-**精简版：**
-```
-请按以下流程重构代码：
-1. 行为分析：当前代码的输入输出行为
-2. 重构目标：解决什么问题（可读性/扩展性/性能）
-3. 重构策略：选择重构模式
-4. 等价性验证：重构前后行为完全一致
-5. 渐进式重构：分步进行，每步可验证
-```
-
-**完整版：**
-```
-请按工程化流程重构代码：
-1. 行为分析：当前代码的所有输入输出行为
-2. 重构目标：明确重构要解决的问题（可读性/扩展性/性能）
-3. 重构策略：选择重构模式（提取函数/替换算法/分解类...）
-4. 等价性验证：重构前后行为必须完全一致
-5. 测试覆盖：重构前确保有足够测试用例
-6. 渐进式重构：分步重构，每步都可验证
-```
-
----
-
-#### #8 安全审查
-
-> **解决：** AI 生成代码常忽略安全问题
-
-**精简版：**
-```
-请审查代码的安全问题：
-1. 检查硬编码的密钥、密码、API Token
-2. 检查输入验证（SQL 注入、XSS、命令注入）
-3. 检查权限控制和认证逻辑
-4. 检查敏感数据是否泄露（日志、错误信息）
-5. 列出发现的风险和修复建议
-```
-
-**完整版：**
-```
-请按以下流程审查代码安全：
-1. 凭证管理：检查硬编码的密钥、密码、API Token、数据库连接串
-2. 输入验证：检查 SQL 注入、XSS、命令注入、路径遍历
-3. 认证授权：检查认证逻辑、权限控制、越权访问
-4. 数据安全：检查敏感数据是否在日志、错误信息中泄露
-5. 依赖安全：检查已知漏洞的依赖包版本
-6. 错误处理：检查错误信息是否暴露系统内部细节
-7. 列出每个风险点、影响程度、和修复建议
-```
-
----
-
-### 理解期：读懂代码
-
-#### #9 层次化解释
-
-> **解决：** AI 解释过于表面或过于深入
-
-**精简版：**
-```
-请按层次解释代码：
-1. 一句话总结核心功能
-2. 整体结构和数据流
-3. 关键逻辑逐段解释
-4. 异常和边界情况
-5. 设计意图和替代方案
-```
-
-**完整版：**
-```
-请按层次化方式解释代码：
-1. 一句话总结：这段代码的核心功能是什么
-2. 架构概览：代码的整体结构和数据流
-3. 关键逻辑：逐段解释核心算法/逻辑
-4. 边界情况：代码处理的异常/边界情况
-5. 设计意图：为什么这样设计，替代方案是什么
-6. 改进建议：如果让你改进，你会怎么改
-```
-
----
-
-## 使用示例
-
-### 示例 1：让 AI 写一个 REST API
-
-**不加 Prompt（常见翻车）：**
-```
-帮我写一个用户注册的 REST API
-```
-AI 可能输出：省略 import、缺数据库连接、没有错误处理、忘了路由注册...
-
-**加了 #1 + #2 Prompt：**
-```
-[先粘贴 #1 精简版 Prompt]
-
-帮我用 Express + TypeScript 写一个用户注册的 REST API，要求：
-- POST /api/register
-- 参数：email, password
-- 密码 bcrypt 加密
-- 返回 JWT token
-```
-AI 输出：完整文件树、每个文件完整代码、package.json、运行命令。
-
----
-
-### 示例 2：修 Bug 不引入新问题
-
-**场景：** 用户登录偶尔报 500 错误
-
-**加了 #4 + #5 Prompt：**
-```
-[先粘贴 #4 精简版 + #5 精简版 Prompt]
-
-我的 Express 应用，POST /login 偶尔返回 500，大部分时候正常。
-相关代码在 src/auth/login.ts，请修复。
-```
-
-AI 输出会包含：
-1. 复现条件分析
-2. 根因（如：数据库连接池耗尽）
-3. 影响范围（登录、注册、token 刷新都依赖同一连接池）
-4. 2 种修复方案对比
-5. 回归验证清单
-
----
-
-### 示例 3：改代码不乱动
-
-**场景：** 只想改一个函数的返回值格式
-
-**加了 #3 Prompt：**
-```
-[先粘贴 #3 精简版 Prompt]
-
-只修改 src/utils/format.ts 中的 formatDate 函数，
-将返回格式从 "YYYY-MM-DD" 改为 "DD/MM/YYYY"。
-不要改动其他函数。
-```
-
-AI 输出：精确 diff 预览，只改了 formatDate，没有"顺手"优化其他函数。
-
----
-
-### 示例 4：安全审查
-
-**场景：** 新功能上线前检查
-
-**加了 #8 Prompt：**
-```
-[先粘贴 #8 精简版 Prompt]
-
-请审查 src/api/ 目录下的所有路由代码，特别关注：
-- 用户输入是否有验证
-- 数据库查询是否用了参数化
-- 错误信息是否泄露了内部细节
-```
-
----
-
-### 示例 5：理解陌生代码
-
-**场景：** 接手同事的项目
-
-**加了 #9 Prompt：**
-```
-[先粘贴 #9 精简版 Prompt]
-
-请解释 src/core/engine.ts 这个文件，我不熟悉这个项目。
-```
-
-AI 输出：从一句话总结 → 架构概览 → 关键逻辑 → 边界情况 → 设计意图，层层递进。
-
----
-
-## Prompt 效果评估
-
-怎么判断 Prompt 是否生效？用以下标准自检：
-
-### 评估矩阵
-
-| 维度 | ✅ 生效信号 | ❌ 失效信号 |
-|------|------------|------------|
-| **完整性** | 输出包含完整文件树，无省略号 | 出现 "..."、"其余类似"、"详见文档" |
-| **可控性** | 只改了你指定的部分 | 多改了其他文件/函数 |
-| **可验证性** | 提供了测试用例或验证方法 | 只给代码，没有验证手段 |
-| **根因深度** | 分析到第 2-3 层原因 | 只描述症状（"空指针"、"类型错误"） |
-| **安全性** | 主动标注潜在风险点 | 代码中有硬编码密钥、无输入校验 |
-| **输出格式** | 结构清晰，按要求格式输出 | 格式混乱，缺少必要部分 |
-
-### 快速验证清单
-
-每次 AI 输出后，花 30 秒检查：
+## 架构
 
 ```
-□ 代码里有没有 "..." 或省略标记？
-□ 改动范围是否和我要求的一致？
-□ 有没有提供运行命令？
-□ 有没有标注不确定的部分？
-□ 安全相关代码有没有明显漏洞？
+easyagents
+├── core/          AgentDefinition / AgentRegistry / SessionManager / exceptions
+├── persistence/   SessionStore 抽象（InMemory / SQLite / base）
+├── context/       ContextManager 上下文压缩
+├── patterns/      Orchestrator / DynamicOrchestrator / Handoff / Router / Delegation
+├── workflows/     GraphWorkflow / AgentNode / ApprovalNode / CheckpointManager
+├── tools/         ToolRegistry + builtin（web_search / http_request / write_file）
+├── observability/ Logfire 跟踪
+├── api/           FastAPI（agents/sessions/patterns/approvals/checkpoints 路由）
+├── cli/           Typer CLI
+└── web/           static HTML/CSS/JS Web UI
 ```
 
-### 量化追踪（可选）
+## 测试
 
-如果想长期优化 Prompt，可以记录：
-
-| 指标 | 计算方式 |
-|------|----------|
-| 一次通过率 | 不需要修改直接可用的次数 / 总使用次数 |
-| 省略率 | 出现省略标记的次数 / 总使用次数 |
-| 范围失控率 | 多改了代码的次数 / 总使用次数 |
-| 返工率 | 需要重新让 AI 修改的次数 / 总使用次数 |
-
-**目标：** 一次通过率 > 80%，省略率 < 5%，范围失控率 < 10%
-
----
-
-## 什么时候不要用这些 Prompt
-
-这些 Prompt 不是万能的，以下场景建议**不要使用**或**简化使用**：
-
-### ❌ 不建议使用的场景
-
-| 场景 | 原因 | 替代方案 |
-|------|------|----------|
-| **快速原型/探索** | 追求速度时，完整 Prompt 太重 | 只用 #1 省略禁令，其他跳过 |
-| **简单脚本（<50 行）** | 杀鸡用牛刀 | 直接写，不需要 Prompt 约束 |
-| **对话式学习** | 目标是理解概念，不是产出代码 | 用 #9 解释，但不需要其他 |
-| **创意探索（头脑风暴）** | 约束会抑制创意 | 不加 Prompt，让 AI 自由发挥 |
-| **已有完善测试的项目** | 测试会兜底，Prompt 约束冗余 | 直接改，跑测试验证 |
-| **AI 能力边界外的任务** | Prompt 无法弥补模型能力不足 | 换更强的模型，或人工处理 |
-
-### ⚠️ 需要简化的场景
-
-| 场景 | 建议 |
-|------|------|
-| **上下文窗口紧张** | 只用精简版，去掉完整版 |
-| **多轮对话** | Prompt 放在第一轮，后续轮次不需要重复 |
-| **团队协作** | 选 3-4 个最常用的 Prompt 固化到团队规范 |
-
----
-
-## 快速上手
-
-### 1. 选择 Prompt
-
-从决策树找到对应场景，先试**精简版**，效果不够再切**完整版**。
-
-### 2. 注入上下文
-
-在对话开头提供项目上下文：
-
-```
-## 项目上下文
-- 技术栈：[语言/框架/版本]
-- 项目类型：[Web/CLI/Mobile/Backend]
-- 代码风格：[命名规范/文件组织]
-- 特殊约束：[性能要求/兼容性/团队规范]
-
-## 当前任务
-[具体描述]
-
-## 应用以下 Prompt
-[粘贴对应模板]
+```bash
+pytest            # 128 个测试，全部使用 FunctionModel/TestModel，无真实 LLM 调用
 ```
 
-### 3. 输入需求
+## 设计文档
 
-再输入你的具体需求，AI 会按 Prompt 约束输出。
+各阶段设计与实现计划见 [docs/superpowers/specs](docs/superpowers/specs/) 与 [docs/superpowers/plans](docs/superpowers/plans/)：
 
----
-
-## Prompt 失效怎么办？
-
-| 症状 | 可能原因 | 应对策略 |
-|------|----------|----------|
-| AI 仍省略代码 | Prompt 太长被截断 | 用精简版，或拆成多条消息 |
-| AI 仍"顺手优化" | 约束在消息后半段被忽略 | 将约束放在消息开头，用"禁止"明确列出 |
-| AI 不分析根因 | 模型能力不足 | 降低温度，明确要求"先分析再给方案" |
-| AI 输出格式混乱 | 格式要求太多 | 只保留 1-2 个关键输出要求 |
-| AI 误解需求 | 需求不明确 | 用"用户故事"格式重述需求 |
-| AI 给出不可运行代码 | 缺少上下文 | 提供技术栈、框架版本、配置文件 |
-
----
-
-## 持续迭代
-
-- 根据实际项目反馈，不断完善 Prompt
-- 记录 AI 的失败案例，针对性补充约束条件
-- 建立团队共享的 Prompt 库
-- 定期回顾：哪些 Prompt 常用？哪些从未用过？
-
----
-
-## 版本历史
-
-| 版本 | 变更 |
-|------|------|
-| v1 | 初始版本，10 个痛点对应 10 个 Prompt |
-| v2 | 重构为 9 个 Prompt，按工作流阶段分类，增加决策树和场景组合 |
-
----
-
-> EasyAgents · Vibe Coding 反脆弱提示词体系 · 持续迭代中
+- MVP → Phase 1.5（SQLite / 上下文 / 工具）→ Phase 2（编排 / 交接 / 路由）→ Phase 3（图工作流 / HITL / 断点）→ Phase 4（CLI / REST API）→ Phase 5（Web UI）
