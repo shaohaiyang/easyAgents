@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class AgentCreateRequest(BaseModel):
@@ -8,6 +8,15 @@ class AgentCreateRequest(BaseModel):
     tools: list[str] = []
     subagents: list[str] = []
     description: str = ""
+
+    @field_validator("tools", "subagents", mode="before")
+    @classmethod
+    def empty_list(cls, v):
+        if v in (None, ""):
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
 
 class RunRequest(BaseModel):
